@@ -12,7 +12,7 @@ class GBTConfig:
 	dropout:	float = 0.0
 	bias:		bool = True
 
-def LayerNorm(nn.Module):
+class LayerNorm(nn.Module):
 	
 	def __init__(self, ndims, bias):
 		super().__init__()
@@ -23,7 +23,7 @@ def LayerNorm(nn.Module):
 		return F.layer_norm(input, self.weight,shape, self.weight, self.bias, 1e-5)
 
 
-def MLP(nn.Module):
+class MLP(nn.Module):
 
 	def __init__(selif, config):
 		super().__init__()
@@ -37,6 +37,46 @@ def MLP(nn.Module):
 	def forward(self, x):
 		x = self.sequence(x)
 		return x
+
+
+class CausalSelfAttention(nn.Module):
+
+	def __init__(self, config):
+		super().__init__()
+		
+		self.n_embd		= config.n_embd
+		self.n_heads		= config.n_heads
+		self.c_attn		= nn.Linear(config.n_embd, 3*config.n_embd, config.bias)
+		self.c_proj		= nn.Linear(config.n_emdb, config.n_embd, config.bias)
+		self.attn_dropout	= nn.Dropout(config.dropout)
+		self.resid_dropout	= nn.Dropout(config.dropout)
+		self.flash		= hasattr(torch.nn.functional, 'scaled_dot_product_attention')
+		if not self.flash:
+			self.register_buffer("bias", torch.tril(torch.ones(config.block_size, config.block_size)).view(1, 1, config.block_size, config.block_size))
+
+	def forward(self, x):
+		B, T, C = x.split()
+
+		q, k, v = self.c_attn(x).split(config.n_embd, dim=2)
+		q = q.view(B, T, self.n_heads, C // self.n_heads).transpose(1, 2)
+		k = k.view(B, T, self.n_heads, C // self.n_heads).transpose(1, 2)
+		v = v.view(B, T, self.n_heads, C // self.n_heads).transpose(1, 2)
+
+		if self.flash:
+			# gpu acclerated version
+		else:
+			attn = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
+			attn = attn.masked_fill(self.bias[:, :, :T, :T] == 0, float('-inf'))
+			attn = F.softmax(attn, dim=-1)
+			attn = self.attn_dropout(attn)
+			y = attn @ v
+		
+		y = y.transpose(1, 2).contiguous().view(B, T, C)
+		y = self.resid_dropout(self.c_proj(y))
+		return y
+			
+
+
 
 
 
