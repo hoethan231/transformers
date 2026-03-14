@@ -22,3 +22,26 @@ def LayerNorm(nn.Module):
 	def forward(self, input)
 		return F.layer_norm(input, self.weight,shape, self.weight, self.bias, 1e-5)
 
+
+def MLP(nn.Module):
+
+	def __init__(selif, config):
+		super().__init__()
+		self.sequence = nn.Sequence([
+			nn.Linear(config.n_embd, 4*config.n_embd, config.bias),
+			nn.GELU(),
+			nn.Linear(4*config.n_embd, config-n_embd, config.bias)
+			nn.Dropout(config.dropout)
+			])
+
+	def forward(self, x):
+		x = self.sequence(x)
+		return x
+
+
+
+
+
+
+
+
