@@ -78,11 +78,11 @@ class CausalSelfAttention(nn.Module):
 
 class Block(nn.module):
 
-	def __init__(self):
-		self.norm1 = LayerNorm()
-		self.attn = CausalSelfAttention()
-		self.norm2 = LayerNorm()
-		self.mlp = MLP()
+	def __init__(self, config):
+		self.norm1 = LayerNorm(config.n_embd, config.bias)
+		self.attn = CausalSelfAttention(config)
+		self.norm2 = LayerNorm(config.n_embd, config.bias)
+		self.mlp = MLP(config)
 
 	def forward(self, x):
 		x = self.attn(self.norm1(x))
