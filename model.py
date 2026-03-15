@@ -63,7 +63,7 @@ class CausalSelfAttention(nn.Module):
 		v = v.view(B, T, self.n_heads, C // self.n_heads).transpose(1, 2)
 
 		if self.flash:
-			# gpu acclerated version
+			y = nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=self.dropout if self.training else 0, is_causal=True)
 		else:
 			attn = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
 			attn = attn.masked_fill(self.bias[:, :, :T, :T] == 0, float('-inf'))
