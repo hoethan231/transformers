@@ -1,7 +1,8 @@
+import math
+from dataclasses import dataclass
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import math
 
 @dataclass
 class GBTConfig:
@@ -28,12 +29,12 @@ class MLP(nn.Module):
 
 	def __init__(self, config):
 		super().__init__()
-		self.sequence = nn.Sequence([
+		self.sequence = nn.Sequential(
 			nn.Linear(config.n_embd, 4*config.n_embd, config.bias),
 			nn.GELU(),
 			nn.Linear(4*config.n_embd, config.n_embd, config.bias),
 			nn.Dropout(config.dropout)
-			])
+			)
 
 	def forward(self, x):
 		x = self.sequence(x)
@@ -45,18 +46,19 @@ class CausalSelfAttention(nn.Module):
 	def __init__(self, config):
 		super().__init__()
 		
-		self.n_embd		= config.n_embd
+		self.n_embd			= config.n_embd
 		self.n_heads		= config.n_heads
-		self.c_attn		= nn.Linear(config.n_embd, 3*config.n_embd, config.bias)
-		self.c_proj		= nn.Linear(config.n_emdb, config.n_embd, config.bias)
+		self.c_attn			= nn.Linear(config.n_embd, 3*config.n_embd, config.bias)
+		self.c_proj			= nn.Linear(config.n_embd, config.n_embd, config.bias)
 		self.attn_dropout	= nn.Dropout(config.dropout)
 		self.resid_dropout	= nn.Dropout(config.dropout)
-		self.flash		= hasattr(torch.nn.functional, 'scaled_dot_product_attention')
+		self.dropout		= config.dropout
+		self.flash			= hasattr(torch.nn.functional, 'scaled_dot_product_attention')
 		if not self.flash:
 			self.register_buffer("bias", torch.tril(torch.ones(config.block_size, config.block_size)).view(1, 1, config.block_size, config.block_size))
 
 	def forward(self, x):
-		B, T, C = x.split()
+		B, T, C = x.size()
 
 		q, k, v = self.c_attn(x).split(self.n_embd, dim=2)
 		q = q.view(B, T, self.n_heads, C // self.n_heads).transpose(1, 2)
@@ -64,7 +66,7 @@ class CausalSelfAttention(nn.Module):
 		v = v.view(B, T, self.n_heads, C // self.n_heads).transpose(1, 2)
 
 		if self.flash:
-			y = nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=self.dropout if self.training else 0, is_causal=True)
+			y = F.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=self.dropout if self.training else 0, is_causal=True)
 		else:
 			attn = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
 			attn = attn.masked_fill(self.bias[:, :, :T, :T] == 0, float('-inf'))
@@ -77,21 +79,22 @@ class CausalSelfAttention(nn.Module):
 		return y
 			
 
-class Block(nn.module):
+class Block(nn.Module):
 
 	def __init__(self, config):
+		super().__init__()
 		self.norm1 = LayerNorm(config.n_embd, config.bias)
 		self.attn = CausalSelfAttention(config)
 		self.norm2 = LayerNorm(config.n_embd, config.bias)
 		self.mlp = MLP(config)
 
 	def forward(self, x):
-		x = self.attn(self.norm1(x))
-		x = self.mlp(self.norm2(x))
+		x = x + self.attn(self.norm1(x))
+		x = x + self.mlp(self.norm2(x))
 		return x
 
 
-class GPT(nn.module):
+class GPT(nn.Module):
 
 	def __init__(self, config):
 		super().__init__()
@@ -112,15 +115,23 @@ class GPT(nn.module):
 		
 		for name, param in self.named_parameters():
 			if name.endswith('c_proj.weight'):
-				torch.nn.init.normal_(param, mean=0.0, std=0.02/math.sqrt(2*config.n_layer))
+				torch.nn.init.normal_(param, mean=0.0, std=0.02/math.sqrt(2*config.n_layers))
+    
+	def _init_weights(self, module):
+		if isinstance(module, nn.Linear):
+			torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+			if module.bias is not None:
+				torch.nn.init.zeros_(module.bias)
+		elif isinstance(module, nn.Embedding):
+			torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
   
 	def forward(self, idx, targets=None):
-		device = idx.device()
+		device = idx.device
 		b, t = idx.size()
 		pos = torch.arange(0, t, dtype=torch.long, device=device)
 
-		wte = self.transformer.wte[idx]
-		wpe = self.transformer.wte[pos]
+		wte = self.transformer.wte(idx)
+		wpe = self.transformer.wte(pos)
 		x = self.transformer.drop(wte + wpe)
   
 		for block in self.transformer.heads:
@@ -130,10 +141,12 @@ class GPT(nn.module):
 		
 		if targets is not None:
 			logits = self.lm_head(x)
-			loss = F.cross_entropy(logits.view(-1, logits.size(-1)), logits.view(-1), ignore_index=-1)
+			loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
 		else:
 			logits = self.lm_head(x[:, [-1], :])
 			loss = None
+		
+		return logits, loss
  
 	@torch.no_grad()
 	def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None):
@@ -148,7 +161,7 @@ class GPT(nn.module):
 				logits[logits < v[:, [-1]]] = -float('Inf')
 			
 			probs = F.softmax(logits, dim=-1)
-			idx_next = torch.multinominal(probs, num_samples=1)
+			idx_next = torch.multinomial(probs, num_samples=1)
 			idx = torch.cat((idx, idx_next), dim=1)
 		return idx
 
