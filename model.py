@@ -91,7 +91,66 @@ class Block(nn.module):
 		return x
 
 
+class GPT(nn.module):
 
+	def __init__(self, config):
+		super().__init__()
+		self.config = config
+		
+		self.transformer = nn.ModuleDict(dict(
+			wte = nn.Embedding(config.vocab_size, config.n_embd),
+			wpe = nn.Embedding(config.block_size, config.n_embd),
+			drop = nn.Dropout(config.dropout),
+			heads = nn.ModuleList([Block(config) for _ in range(config.n_heads)]),
+			ln_f = LayerNorm(config.n_embd, config.bias)
+		))
+  
+		self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
+		self.transformer.wte.weight = self.lm_head.weight # weight tying
+
+		self.apply(self._init_weights)
+		
+		for name, param in self.named_parameters():
+			if name.endswith('c_proj.weight'):
+				torch.nn.init.normal_(param, mean=0.0, std=0.02/math.sqrt(2*config.n_layer))
+  
+	def forward(self, idx, targets=None):
+		device = idx.device()
+		b, t = idx.size()
+		pos = torch.arange(0, t, dtype=torch.long, device=device)
+
+		wte = self.transformer.wte[idx]
+		wpe = self.transformer.wte[pos]
+		x = self.transformer.drop(wte + wpe)
+  
+		for block in self.transformer.heads:
+			x = block(x)
+
+		x = self.transformer.ln_f(x)
+		
+		if targets is not None:
+			logits = self.lm_head(x)
+			loss = F.cross_entropy(logits.view(-1, logits.size(-1)), logits.view(-1), ignore_index=-1)
+		else:
+			logits = self.lm_head(x[:, [-1], :])
+			loss = None
+ 
+	@torch.no_grad()
+	def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None):
+		for _ in range(max_new_tokens):
+			idx = idx if idx.size(1) <= self.config.block_size else idx[:,-self.config.block_size:]
+
+			logits, _ = self(idx)
+			logits = logits[:, -1, :] / temperature
+   
+			if top_k is not None:
+				v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+				logits[logits < v[:, [-1]]] = -float('Inf')
+			
+			probs = F.softmax(logits, dim=-1)
+			idx_next = torch.multinominal(probs, num_samples=1)
+			idx = torch.cat((idx, idx_next), dim=1)
+		return idx
 
 
 
