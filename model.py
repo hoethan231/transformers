@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import math
 
 @dataclass
 class GBTConfig:
@@ -19,18 +20,18 @@ class LayerNorm(nn.Module):
 		self.weight = nn.Parameter(torch.ones(ndims))
 		self.bias = nn.Parameter(torch.zeros(ndims)) if bias else None
 
-	def forward(self, input)
-		return F.layer_norm(input, self.weight,shape, self.weight, self.bias, 1e-5)
+	def forward(self, input):
+		return F.layer_norm(input, self.weight.shape, self.weight, self.bias, 1e-5)
 
 
 class MLP(nn.Module):
 
-	def __init__(selif, config):
+	def __init__(self, config):
 		super().__init__()
 		self.sequence = nn.Sequence([
 			nn.Linear(config.n_embd, 4*config.n_embd, config.bias),
 			nn.GELU(),
-			nn.Linear(4*config.n_embd, config-n_embd, config.bias)
+			nn.Linear(4*config.n_embd, config.n_embd, config.bias),
 			nn.Dropout(config.dropout)
 			])
 
@@ -57,7 +58,7 @@ class CausalSelfAttention(nn.Module):
 	def forward(self, x):
 		B, T, C = x.split()
 
-		q, k, v = self.c_attn(x).split(config.n_embd, dim=2)
+		q, k, v = self.c_attn(x).split(self.n_embd, dim=2)
 		q = q.view(B, T, self.n_heads, C // self.n_heads).transpose(1, 2)
 		k = k.view(B, T, self.n_heads, C // self.n_heads).transpose(1, 2)
 		v = v.view(B, T, self.n_heads, C // self.n_heads).transpose(1, 2)
