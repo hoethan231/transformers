@@ -1,20 +1,23 @@
 #!/bin/bash
 #SBATCH --job-name=train_miniGPT
 #SBATCH --partition=gpuqs
-#SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:a100:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16G
 #SBATCH --time=03:00:00
-#SBATCH --output=logs/%j_out.txt
-#SBATCH --error=logs/%j_err.txt
+#SBATCH --output=/home/017157582/miniGPT/logs/%j_out.txt
+#SBATCH --error=/home/017157582/miniGPT/logs/%j_err.txt
 #SBATCH --mail-user=my_email@sjsu.edu
 #SBATCH --mail-type=END
 
-module load python3/3.11.7
-module load cuda
+module purge
 
-conda activate miniGPT
+module load python3/3.12.12
+module load ml/torch/2.6
+
+source ~/miniGPT/.venv/bin/activate
 
 cd ~/projects/miniGPT
-python train.py
+python3 train.py
+
 
