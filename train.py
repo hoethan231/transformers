@@ -18,8 +18,8 @@ val_data = np.memmap('val.bin', dtype=np.uint16, mode='r')
 def get_batch(split):
 	data = training_data if split == 'training' else val_data
 	batch_idxs = torch.randint(len(data)-block_size, (batch_size,))
-	x = torch.stack([torch.from_numpy(data[i:i+block_size].astype(np.int64) for i in batch_idxs)])
-	y = torch.stack([torch.from_numpy(data[i+1:i+block_size+1].astype(np.int64) for i in batch_idxs)])
+	x = torch.stack([torch.from_numpy(data[i:i+block_size].astype(np.int64)) for i in batch_idxs])
+	y = torch.stack([torch.from_numpy(data[i+1:i+block_size+1].astype(np.int64)) for i in batch_idxs])
 	return x.to(device), y.to(device)
 
 config = GBTConfig()
